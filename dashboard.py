@@ -26,9 +26,23 @@ from xgboost import XGBClassifier
 
 warnings.filterwarnings("ignore")
 
+# =============================================================================
+# CONSTANTS & REALITY CALIBRATION
+# =============================================================================
+# This constant is the 'Reality Check'. Since our AI's ego is 100% but its 
+# precision is ~62%, we multiply the confidence scores to show the real likelihood.
+VALIDATION_PRECISION = 0.622  
+FEATURES = ["Chapter_Code", "Year", "symbol_count",
+            "Historical_Weight", "Is_Numerical", "years_since_last"]
+
+SUBJECT_COLORS = {
+    "Physics":     "#38bdf8",
+    "Chemistry":   "#34d399",
+    "Mathematics": "#f472b6",
+}
 
 # =============================================================================
-# SUBJECT EXPERT CLASS (Matches training script)
+# SUBJECT EXPERT CLASS (Matches training script structure)
 # =============================================================================
 class SubjectExpert:
     def __init__(self, subject_name: str, model_type: str = "xgb"):
@@ -45,6 +59,7 @@ class SubjectExpert:
         else:
             base_clf = XGBClassifier(n_estimators=150, learning_rate=0.05,
                                      max_depth=6, random_state=42, verbosity=0)
+        # Note: If experts were trained with Isotonic, the method below must match
         self.clf = CalibratedClassifierCV(estimator=base_clf, method="sigmoid", cv=3)
 
     def get_signals(self, df_input, features):
@@ -54,16 +69,6 @@ class SubjectExpert:
         prob_knn     = self.knn_template.predict_proba(X_text)[:, 1]
         score_purity = np.max(self.nb_purity.predict_proba(X_text), axis=1)
         return prob_main, prob_knn, score_purity
-
-
-FEATURES = ["Chapter_Code", "Year", "symbol_count",
-            "Historical_Weight", "Is_Numerical", "years_since_last"]
-
-SUBJECT_COLORS = {
-    "Physics":     "#38bdf8",
-    "Chemistry":   "#34d399",
-    "Mathematics": "#f472b6",
-}
 
 # =============================================================================
 # PAGE CONFIG
@@ -90,7 +95,7 @@ html, body, [class*="css"] {
     background: #080c14;
 }
 
-/* ---- top hero strip ---- */
+/* ---- hero section ---- */
 .hero {
     padding: 2.5rem 0 1.5rem 0;
     border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -117,7 +122,7 @@ html, body, [class*="css"] {
     font-weight: 300;
 }
 
-/* ---- stat cards ---- */
+/* ---- stat metrics ---- */
 .stat-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
 .stat-card {
     flex: 1;
@@ -155,7 +160,7 @@ html, body, [class*="css"] {
     margin-top: 0.3rem;
 }
 
-/* ---- topic cards ---- */
+/* ---- target topic cards ---- */
 .topic-card {
     background: #0f1623;
     border: 1px solid #1e2a3a;
@@ -204,7 +209,7 @@ html, body, [class*="css"] {
     margin-top: 0.25rem;
 }
 
-/* ---- inference card ---- */
+/* ---- inference display ---- */
 .inference-result {
     background: #0f1623;
     border: 1px solid #1e2a3a;
@@ -221,7 +226,7 @@ html, body, [class*="css"] {
 }
 .infer-label { color: #475569; font-size: 0.85rem; }
 
-/* ---- disclaimer ---- */
+/* ---- disclaimer bar ---- */
 .disclaimer {
     background: rgba(251,191,36,0.06);
     border: 1px solid rgba(251,191,36,0.2);
@@ -232,7 +237,7 @@ html, body, [class*="css"] {
     margin-bottom: 1.2rem;
 }
 
-/* ---- section header ---- */
+/* ---- section headers ---- */
 .section-header {
     font-family: 'Space Mono', monospace;
     font-size: 0.68rem;
@@ -244,7 +249,6 @@ html, body, [class*="css"] {
     border-bottom: 1px solid #1e2a3a;
 }
 
-/* ---- review card ---- */
 .review-card {
     background: #0f1623;
     border: 1px solid #1e2a3a;
@@ -253,10 +257,9 @@ html, body, [class*="css"] {
     margin-bottom: 0.8rem;
 }
 
-/* ---- plotly overrides ---- */
 .js-plotly-plot .plotly { background: transparent !important; }
 
-/* ---- tab styling ---- */
+/* ---- tab interface ---- */
 .stTabs [data-baseweb="tab-list"] {
     gap: 0.25rem;
     background: #0f1623;
@@ -311,6 +314,7 @@ def load_historical():
         return df
     except Exception:
         try:
+            # Fallback to forecast if full dataset is missing
             df = pd.read_csv("final_forecast_2026.csv")
             return df
         except Exception:
@@ -323,7 +327,7 @@ historical_df = load_historical()
 
 
 # =============================================================================
-# DATABASE
+# DATABASE (Community Feed)
 # =============================================================================
 def init_db():
     conn = sqlite3.connect("reviews.db", check_same_thread=False)
@@ -353,7 +357,7 @@ init_db()
 
 
 # =============================================================================
-# PLOTLY THEME HELPER
+# PLOTLY THEME
 # =============================================================================
 PLOT_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
@@ -365,13 +369,13 @@ AXIS_STYLE = dict(gridcolor="#1e2a3a", zerolinecolor="#1e2a3a")
 
 
 # =============================================================================
-# HERO
+# HERO SECTION
 # =============================================================================
-st.markdown("""
+st.markdown(f"""
 <div class="hero">
     <div class="hero-eyebrow">NTA Pattern Intelligence · 2026 Edition</div>
     <div class="hero-title">JEE Advanced Forecast</div>
-    <div class="hero-sub">Hierarchical AI · 3-Expert Stack · 61% Precision on 2025 Validation</div>
+    <div class="hero-sub">Hierarchical AI · 3-Expert Stack · {VALIDATION_PRECISION:.1%} Precision on 2025 Validation</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -384,17 +388,17 @@ st.markdown("""
 
 
 # =============================================================================
-# STAT CARDS
+# STAT CARDS (Reality Adjusted)
 # =============================================================================
 if not forecast_df.empty:
     n_topics   = len(forecast_df)
-    mean_conf  = forecast_df["Final_Prob"].mean()
-    top_conf   = forecast_df["Final_Prob"].max()
+    # The 'Mean Confidence' is scaled down by precision for honesty
+    mean_conf  = forecast_df["Final_Prob"].mean() * VALIDATION_PRECISION
+    top_conf   = forecast_df["Final_Prob"].max() * VALIDATION_PRECISION
     n_chapters = forecast_df["Chapter"].nunique() if "Chapter" in forecast_df.columns else "—"
-    hits       = int(forecast_df["Is_Hit"].sum()) if "Is_Hit" in forecast_df.columns else "—"
-    precision  = f"{hits/n_topics:.0%}" if isinstance(hits, int) else "—"
+    precision_val = VALIDATION_PRECISION
 else:
-    n_topics, mean_conf, top_conf, n_chapters, precision = 90, 0, 0, "—", "—"
+    n_topics, mean_conf, top_conf, n_chapters, precision_val = 90, 0, 0, "—", 0
 
 st.markdown(f"""
 <div class="stat-row">
@@ -404,27 +408,27 @@ st.markdown(f"""
     <div class="stat-delta">30 per subject</div>
   </div>
   <div class="stat-card" style="--accent:#34d399">
-    <div class="stat-label">Mean Confidence</div>
-    <div class="stat-value">{mean_conf:.0%}</div>
-    <div class="stat-delta">across all subjects</div>
+    <div class="stat-label">Real Likelihood</div>
+    <div class="stat-value">{mean_conf:.1%}</div>
+    <div class="stat-delta">Mean precision-adjusted score</div>
   </div>
   <div class="stat-card" style="--accent:#f472b6">
-    <div class="stat-label">Top Score</div>
-    <div class="stat-value">{top_conf:.0%}</div>
-    <div class="stat-delta">highest single topic</div>
+    <div class="stat-label">Max Score</div>
+    <div class="stat-value">{top_conf:.1%}</div>
+    <div class="stat-delta">highest single topic likelihood</div>
   </div>
   <div class="stat-card" style="--accent:#a78bfa">
     <div class="stat-label">Validation Precision</div>
-    <div class="stat-value">{precision}</div>
-    <div class="stat-delta">on 2025 paper</div>
+    <div class="stat-value">{precision_val:.1%}</div>
+    <div class="stat-delta">based on 2025 hits</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
 if models_loaded:
-    st.success("Models loaded — live inference available", icon="✅")
+    st.success("Models loaded — intelligence layer active", icon="✅")
 else:
-    st.warning("Model files not found. Live inference disabled. Run training script first.", icon="⚠️")
+    st.warning("Model files not found. Inference layer disabled.", icon="⚠️")
 
 
 # =============================================================================
@@ -435,7 +439,7 @@ tabs = st.tabs([
     "Live Inference",
     "Forecast Analytics",
     "Historical Trends",
-    "Community",
+    "Community Strategy",
 ])
 
 
@@ -443,10 +447,10 @@ tabs = st.tabs([
 # TAB 0 — PREDICTION MATRIX
 # ---------------------------------------------------------------------------
 with tabs[0]:
-    st.markdown('<div class="section-header">Target Topic Matrix</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Target Topic Matrix (Adjusted for Precision)</div>', unsafe_allow_html=True)
 
     if forecast_df.empty:
-        st.info("Run the training script to generate final_forecast_2026.csv")
+        st.info("No forecast data found.")
     else:
         fc1, fc2, fc3 = st.columns([2, 1, 1])
         with fc1:
@@ -456,17 +460,20 @@ with tabs[0]:
                 default=["Physics", "Chemistry", "Mathematics"],
             )
         with fc2:
-            min_prob = st.slider("Min probability", 0.0, 1.0, 0.0, 0.05)
+            min_prob = st.slider("Min real likelihood", 0.0, 1.0, 0.0, 0.05)
         with fc3:
-            sort_by = st.selectbox("Sort by", ["Final_Prob ↓", "Subtopic A–Z", "Chapter A–Z"])
+            sort_by = st.selectbox("Sort by", ["Real Likelihood ↓", "Subtopic A–Z", "Chapter A–Z"])
 
         view = forecast_df[
-            forecast_df["Subject"].isin(selected_subs) &
-            (forecast_df["Final_Prob"] >= min_prob)
+            forecast_df["Subject"].isin(selected_subs)
         ].copy()
+        
+        # Applying reality multiplier
+        view["Adjusted_Prob"] = view["Final_Prob"] * VALIDATION_PRECISION
+        view = view[view["Adjusted_Prob"] >= min_prob]
 
-        if sort_by == "Final_Prob ↓":
-            view = view.sort_values("Final_Prob", ascending=False)
+        if sort_by == "Real Likelihood ↓":
+            view = view.sort_values("Adjusted_Prob", ascending=False)
         elif sort_by == "Subtopic A–Z":
             view = view.sort_values("Subtopic")
         else:
@@ -480,8 +487,10 @@ with tabs[0]:
         for i, (_, row) in enumerate(view.iterrows()):
             subj    = row["Subject"]
             accent  = SUBJECT_COLORS.get(subj, "#94a3b8")
-            prob    = row["Final_Prob"]
-            bar_w   = int(prob * 100)
+            
+            # Use Adjusted Probability for UI bars and labels
+            display_prob = row['Adjusted_Prob']
+            bar_w   = int(display_prob * 100)
             chapter = row.get("Chapter", "")
             hit_tag = ""
             if "Is_Hit" in row and not pd.isna(row["Is_Hit"]):
@@ -498,7 +507,8 @@ with tabs[0]:
                   <div class="prob-bar-bg">
                     <div class="prob-bar-fill" style="width:{bar_w}%;--accent:{accent}"></div>
                   </div>
-                  <div class="prob-label" style="--accent:{accent}">{prob:.1%}</div>
+                  <div class="prob-label" style="--accent:{accent}">{display_prob:.1%} Real Likelihood</div>
+                  <div style="font-size:0.6rem; color:#475569; text-align:right; margin-top:2px;">AI Model Confidence: {row['Final_Prob']:.0%}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -515,34 +525,46 @@ with tabs[0]:
 # TAB 1 — LIVE INFERENCE
 # ---------------------------------------------------------------------------
 with tabs[1]:
-    st.markdown('<div class="section-header">Live Topic Inference</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Live Topic Intelligence</div>', unsafe_allow_html=True)
 
     inf_col1, inf_col2 = st.columns([1, 1], gap="large")
 
     with inf_col1:
-        st.markdown("**Enter topic details**")
+        st.markdown("**Enter topic details for pattern matching**")
         u_topic   = st.text_input("Sub-topic name", placeholder="e.g. Rotational Dynamics")
         u_latex   = st.text_area("LaTeX representation (optional)",
-                                  placeholder=r"e.g. \tau = I\alpha, \vec{L} = I\vec{\omega}",
-                                  height=90)
+                                 placeholder=r"e.g. \tau = I\alpha, \vec{L} = I\vec{\omega}",
+                                 height=90)
         u_subj    = st.selectbox("Subject", ["Physics", "Chemistry", "Mathematics"])
         u_chapter = st.text_input("Chapter name", placeholder="e.g. rotational-mechanics")
         u_year_last = st.number_input("Last year this topic appeared", min_value=2010,
                                       max_value=2025, value=2023)
-        u_numerical = st.toggle("Integer / Numerical type question?")
-        u_symbols   = st.number_input("Approx. LaTeX command count (symbol density)",
+        u_numerical = st.toggle("Numerical type question?")
+        
+        # Dynamic Weight Handling: Avoid hardcoding '10'
+        # We try to find the topic's weight from history, otherwise use a median
+        hist_weight_val = 10 
+        if not historical_df.empty and u_topic:
+            # Fuzzy match or contains check
+            match = historical_df[historical_df['Subtopic'].str.contains(u_topic, case=False, na=False)]
+            if not match.empty:
+                hist_weight_val = int(match['Historical_Weight'].median())
+            else:
+                hist_weight_val = int(historical_df['Historical_Weight'].median())
+
+        u_symbols   = st.number_input("Symbol Density (Approx. LaTeX commands)",
                                       min_value=0, max_value=100, value=10)
 
-        run_btn = st.button("Run Inference", type="primary", use_container_width=True)
+        run_btn = st.button("Run Live Analysis", type="primary", use_container_width=True)
 
     with inf_col2:
         if run_btn:
             if not models_loaded:
-                st.error("Models not loaded. Run the training script first.")
+                st.error("Model artifacts missing. Live inference requires training first.")
             elif not u_topic:
-                st.warning("Please enter a sub-topic name.")
+                st.warning("A sub-topic name is required.")
             else:
-                with st.spinner("Running through expert stack…"):
+                with st.spinner("Processing through 3-expert stack…"):
                     try:
                         known_chapters = set(le_chap.classes_)
                         chapter_code   = (
@@ -559,23 +581,32 @@ with tabs[1]:
                             "Chapter_Code"     : chapter_code,
                             "Year"             : 2026,
                             "symbol_count"     : u_symbols,
-                            "Historical_Weight": 10,
+                            "Historical_Weight": hist_weight_val,
                             "Is_Numerical"     : int(u_numerical),
                             "years_since_last" : years_since,
                         }
                         row_df = pd.DataFrame([row_dict])
 
+                        # Level-0 Signals
                         exp              = experts[u_subj]
                         p_m, p_k, s_p   = exp.get_signals(row_df, FEATURES)
+                        
+                        # Level-1 Meta Input
                         meta_input       = meta_scaler.transform(
                             [[p_m[0], p_k[0], s_p[0], row_dict["Historical_Weight"]]]
                         )
-                        final_prob = manager.predict_proba(meta_input)[0][1]
+                        
+                        # RAW model output
+                        raw_prob = manager.predict_proba(meta_input)[0][1]
+                        
+                        # REALITY MULTIPLIER (Precision Adjustment)
+                        final_prob = raw_prob * VALIDATION_PRECISION
 
-                        if final_prob >= 0.75:
-                            score_color, verdict = "#34d399", "HIGH PRIORITY"
-                        elif final_prob >= 0.50:
-                            score_color, verdict = "#fbbf24", "MODERATE"
+                        # Priority Verdict based on adjusted score
+                        if final_prob >= 0.50: 
+                            score_color, verdict = "#34d399", "CRITICAL PRIORITY"
+                        elif final_prob >= 0.35:
+                            score_color, verdict = "#fbbf24", "MODERATE RISK"
                         else:
                             score_color, verdict = "#f87171", "LOW PRIORITY"
 
@@ -589,6 +620,9 @@ with tabs[1]:
                                letter-spacing:0.12em;margin-bottom:1.2rem">
                             {verdict}
                           </div>
+                          <div style="font-size:0.8rem; color:#475569; margin-bottom:1.4rem;">
+                            Model Certainty: {raw_prob:.1%} | Calibration Multiplier: {VALIDATION_PRECISION:.3f}
+                          </div>
                           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;
                                       gap:0.8rem;margin-top:1rem">
                             <div style="background:#0a0f1a;border-radius:8px;padding:0.7rem">
@@ -600,7 +634,7 @@ with tabs[1]:
                             <div style="background:#0a0f1a;border-radius:8px;padding:0.7rem">
                               <div style="font-size:0.65rem;color:#475569;
                                           font-family:'Space Mono',monospace;
-                                          letter-spacing:0.1em;margin-bottom:0.3rem">KNN</div>
+                                          letter-spacing:0.1em;margin-bottom:0.3rem">TEMPLATE</div>
                               <div style="font-size:1.1rem;font-weight:700;color:#e2e8f0">{p_k[0]:.1%}</div>
                             </div>
                             <div style="background:#0a0f1a;border-radius:8px;padding:0.7rem">
@@ -623,17 +657,12 @@ with tabs[1]:
                                 "bgcolor": "#0a0f1a",
                                 "bordercolor": "#1e2a3a",
                                 "steps": [
-                                    {"range": [0, 50],  "color": "#0f1623"},
-                                    {"range": [50, 75], "color": "#12202f"},
-                                    {"range": [75, 100],"color": "#152535"},
+                                    {"range": [0, 30],  "color": "#0f1623"},
+                                    {"range": [30, 50], "color": "#12202f"},
+                                    {"range": [50, 100],"color": "#152535"},
                                 ],
-                                "threshold": {
-                                    "line": {"color": score_color, "width": 2},
-                                    "thickness": 0.75,
-                                    "value": final_prob * 100,
-                                },
                             },
-                            title={"text": u_topic, "font": {"color": "#94a3b8", "size": 13}},
+                            title={"text": f"Likelihood: {u_topic}", "font": {"color": "#94a3b8", "size": 13}},
                         ))
                         fig_g.update_layout(
                             paper_bgcolor="rgba(0,0,0,0)",
@@ -651,7 +680,7 @@ with tabs[1]:
                         padding:2.5rem;text-align:center;color:#334155">
               <div style="font-size:2rem;margin-bottom:0.8rem">🔬</div>
               <div style="font-family:'Space Mono',monospace;font-size:0.75rem;letter-spacing:0.1em">
-                Fill in the form and click Run Inference
+                Enter parameters and analyze topic footprints
               </div>
             </div>
             """, unsafe_allow_html=True)
@@ -664,8 +693,12 @@ with tabs[2]:
     st.markdown('<div class="section-header">Forecast Analytics</div>', unsafe_allow_html=True)
 
     if forecast_df.empty:
-        st.info("No forecast data found.")
+        st.info("Insufficient forecast data.")
     else:
+        # Adjustment for Analytics
+        analytics_df = forecast_df.copy()
+        analytics_df["Real_Likelihood"] = analytics_df["Final_Prob"] * VALIDATION_PRECISION
+
         r1c1, r1c2 = st.columns(2)
 
         with r1c1:
@@ -676,7 +709,7 @@ with tabs[2]:
 
             fig1 = go.Figure()
             for subj, color in SUBJECT_COLORS.items():
-                sub_data = forecast_df[forecast_df["Subject"] == subj]["Final_Prob"]
+                sub_data = analytics_df[analytics_df["Subject"] == subj]["Real_Likelihood"]
                 if not sub_data.empty:
                     fig1.add_trace(go.Violin(
                         y=sub_data, name=subj, line_color=color,
@@ -686,38 +719,36 @@ with tabs[2]:
                     ))
             fig1.update_layout(
                 **PLOT_LAYOUT,
-                title=dict(text="Probability distribution by subject", font=dict(size=13)),
+                title=dict(text="Real Likelihood Spread by Subject", font=dict(size=13)),
                 showlegend=False, height=320,
             )
             st.plotly_chart(fig1, use_container_width=True)
 
         with r1c2:
-            top15 = forecast_df.nlargest(15, "Final_Prob")
+            top15 = analytics_df.nlargest(15, "Real_Likelihood")
             colors_bar = [SUBJECT_COLORS.get(s, "#94a3b8") for s in top15["Subject"]]
             fig2 = go.Figure(go.Bar(
-                x=top15["Final_Prob"],
+                x=top15["Real_Likelihood"],
                 y=top15["Subtopic"],
                 orientation="h",
                 marker_color=colors_bar,
-                text=[f"{p:.0%}" for p in top15["Final_Prob"]],
+                text=[f"{p:.1%}" for p in top15["Real_Likelihood"]],
                 textposition="outside",
                 textfont=dict(size=10, color="#94a3b8"),
             ))
             fig2.update_layout(
                 **PLOT_LAYOUT,
-                title=dict(text="Top 15 highest-confidence topics", font=dict(size=13)),
+                title=dict(text="Top 15 Most Pattern-Aligned Topics", font=dict(size=13)),
                 height=320,
-                xaxis=dict(range=[0, 1.1], tickformat=".0%",
-                           gridcolor="#1e2a3a", zerolinecolor="#1e2a3a"),
-                # FIXED: Combined yaxis settings into one dict to avoid keyword repetition
-                yaxis=dict(autorange="reversed", gridcolor="#1e2a3a"),
+                xaxis=dict(range=[0, 1.0], tickformat=".0%", **AXIS_STYLE),
+                yaxis=dict(autorange="reversed", **AXIS_STYLE),
             )
             st.plotly_chart(fig2, use_container_width=True)
 
         r2c1, r2c2 = st.columns(2)
 
         with r2c1:
-            subj_counts = forecast_df["Subject"].value_counts().reset_index()
+            subj_counts = analytics_df["Subject"].value_counts().reset_index()
             subj_counts.columns = ["Subject", "Count"]
             fig3 = go.Figure(go.Pie(
                 labels=subj_counts["Subject"],
@@ -729,32 +760,32 @@ with tabs[2]:
             ))
             fig3.update_layout(
                 **PLOT_LAYOUT,
-                title=dict(text="Forecast share by subject", font=dict(size=13)),
+                title=dict(text="Forecast Distribution", font=dict(size=13)),
                 height=280, showlegend=False,
             )
             st.plotly_chart(fig3, use_container_width=True)
 
         with r2c2:
-            bins   = [0, 0.5, 0.65, 0.75, 0.85, 0.95, 1.01]
-            labels = ["<50%", "50–65%", "65–75%", "75–85%", "85–95%", "95%+"]
-            forecast_df["Bucket"] = pd.cut(
-                forecast_df["Final_Prob"], bins=bins, labels=labels, right=False
+            bins   = [0, 0.35, 0.45, 0.55, 0.65, 1.01]
+            labels = ["Low <35%", "35-45%", "45-55%", "55-65%", "Top Tier 65%+"]
+            analytics_df["Bucket"] = pd.cut(
+                analytics_df["Real_Likelihood"], bins=bins, labels=labels, right=False
             )
-            bucket_counts = forecast_df["Bucket"].value_counts().reindex(labels).fillna(0)
+            bucket_counts = analytics_df["Bucket"].value_counts().reindex(labels).fillna(0)
             fig4 = go.Figure(go.Bar(
                 x=labels,
                 y=bucket_counts.values,
-                marker_color=["#1e2a3a","#1e3a4a","#1a4060","#1a5070","#1a6080","#38bdf8"],
+                marker_color=["#1e2a3a","#1e3a4a","#1a4060","#1a5070","#38bdf8"],
                 text=bucket_counts.values.astype(int),
                 textposition="outside",
                 textfont=dict(size=11, color="#94a3b8"),
             ))
             fig4.update_layout(
                 **PLOT_LAYOUT,
-                title=dict(text="Topics by confidence bucket", font=dict(size=13)),
+                title=dict(text="Frequency by Confidence Bucket", font=dict(size=13)),
                 height=280,
-                xaxis=dict(gridcolor="#1e2a3a"),
-                yaxis=dict(gridcolor="#1e2a3a"),
+                xaxis=AXIS_STYLE,
+                yaxis=AXIS_STYLE,
             )
             st.plotly_chart(fig4, use_container_width=True)
 
@@ -766,7 +797,7 @@ with tabs[3]:
     st.markdown('<div class="section-header">Historical Pattern Analysis</div>', unsafe_allow_html=True)
 
     if historical_df.empty:
-        st.info("Export `topic_yearly` from training script to unlock historical charts.")
+        st.info("Full historical dataset required for trend analysis.")
     else:
         h1, h2 = st.columns(2)
 
@@ -778,7 +809,7 @@ with tabs[3]:
                     yearly, x="Year", y="Count", color="Subject",
                     color_discrete_map=SUBJECT_COLORS,
                     markers=True, template="plotly_dark",
-                    title="Yearly question volume by subject",
+                    title="Volume Trends (2010-2025)",
                 )
                 fig_h1.update_layout(**PLOT_LAYOUT, height=300, xaxis=AXIS_STYLE, yaxis=AXIS_STYLE)
                 st.plotly_chart(fig_h1, use_container_width=True)
@@ -797,7 +828,7 @@ with tabs[3]:
                         ))
                 fig_h2.update_layout(
                     **PLOT_LAYOUT, barmode="group", height=300, xaxis=AXIS_STYLE, yaxis=AXIS_STYLE,
-                    title=dict(text="MCQ vs Numerical distribution", font=dict(size=13)),
+                    title=dict(text="Format Distribution", font=dict(size=13)),
                 )
                 st.plotly_chart(fig_h2, use_container_width=True)
 
@@ -813,10 +844,9 @@ with tabs[3]:
                 textposition="outside",
                 textfont=dict(size=10, color="#94a3b8"),
             ))
-            # FIXED: Combined AXIS_STYLE with custom yaxis properties to avoid repetition
             fig_h3.update_layout(
                 **PLOT_LAYOUT, height=380, xaxis=AXIS_STYLE,
-                title=dict(text="Top 15 highest-frequency chapters", font=dict(size=13)),
+                title=dict(text="High-Density Question Clusters", font=dict(size=13)),
                 yaxis=dict(**AXIS_STYLE, autorange="reversed"),
             )
             st.plotly_chart(fig_h3, use_container_width=True)
@@ -828,24 +858,24 @@ with tabs[3]:
 with tabs[4]:
     st.markdown('<div class="section-header">Community Strategy Feed</div>', unsafe_allow_html=True)
 
-    with st.expander("Share your preparation notes"):
+    with st.expander("Contribute to the strategy pool"):
         with st.form("review_form", clear_on_submit=True):
-            f_name    = st.text_input("Name / alias")
+            f_name    = st.text_input("Name / Alias")
             f_rating  = st.select_slider(
-                "How confident are you in these predictions?",
+                "Prediction confidence rating (1-5)",
                 options=[1, 2, 3, 4, 5], value=4,
             )
-            f_comment = st.text_area("Your strategy or notes", height=100)
-            if st.form_submit_button("Post", type="primary"):
+            f_comment = st.text_area("Share your insight or study plan", height=100)
+            if st.form_submit_button("Publish Insight", type="primary"):
                 if f_name and f_comment:
                     add_review(f_name, f_rating, f_comment)
                     st.rerun()
                 else:
-                    st.warning("Name and comment are required.")
+                    st.warning("All fields are required.")
 
     reviews = get_reviews()
     if reviews.empty:
-        st.info("No posts yet. Be the first to share your strategy.")
+        st.info("No active insights. Be the first to share your plan.")
     else:
         for _, r in reviews.iterrows():
             stars = "★" * int(r["rating"]) + "☆" * (5 - int(r["rating"]))
